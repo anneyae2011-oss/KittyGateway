@@ -80,6 +80,9 @@ export async function initDb() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // Clean up legacy ghost providers with empty base_url
+    await client.query(`DELETE FROM providers WHERE base_url IS NULL OR base_url = ''`);
+
     console.log("Database self-initialized successfully.");
   } catch (err) {
     console.error("Error during database self-initialization:", err);

@@ -125,10 +125,7 @@ export async function handler(event, context) {
         }
 
         // Standardize URLs
-        let formattedBaseUrl = base_url ? base_url.trim() : '';
-        if (formattedBaseUrl.endsWith('/')) {
-          formattedBaseUrl = formattedBaseUrl.slice(0, -1);
-        }
+        let formattedBaseUrl = base_url ? base_url.trim().replace(/\/$/, '') : null;
 
         // If activating this provider, we deactivate all other providers to make sure only one is active at a time
         if (is_active) {
@@ -142,7 +139,7 @@ export async function handler(event, context) {
                is_active = $3,
                updated_at = NOW() 
            WHERE id = $4`,
-          [api_key, formattedBaseUrl, is_active, provider_id]
+          [api_key || null, formattedBaseUrl, is_active, provider_id]
         );
 
         return {
