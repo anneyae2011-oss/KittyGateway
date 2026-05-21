@@ -42,16 +42,20 @@ export async function handler(event, context) {
           const data = await fetchRes.json();
           return { statusCode: 200, headers, body: JSON.stringify(data) };
         }
-      } catch (_) {}
-
-      // Fallback: return a single placeholder model using the provider name
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          data: [{ id: `${activeProvider.id}-default`, object: "model", created: Date.now(), owned_by: activeProvider.id }]
-        })
-      };
+        // Return the actual error from the provider so we can debug it
+        const errText = await fetchRes.text();
+        return {
+          statusCode: fetchRes.status,
+          headers,
+          body: JSON.stringify({ error: `Provider /models returned ${fetchRes.status}`, details: errText, provider_url: `${activeProvider.base_url}/models` })
+        };
+      } catch (err) {
+        return {
+          statusCode: 502,
+          headers,
+          body: JSON.stringify({ error: "Failed to reach provider /models endpoint", details: err.message, provider_url: `${activeProvider.base_url}/models` })
+        };
+      }
     }
 
     // ── All other routes require auth ────────────────────────────────────────
