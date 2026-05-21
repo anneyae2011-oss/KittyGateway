@@ -25,23 +25,29 @@ export async function handler(event, context) {
     }
 
     if (event.httpMethod === 'POST') {
-      // Create a new key
       const keyValue = `mm_${crypto.randomBytes(16).toString('hex')}`;
-      const name = `Key - ${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+      const body = event.body ? JSON.parse(event.body) : {};
+      const oldKey = body.old_key || null;
 
+      if (oldKey) {
+        // Reroll: update key_value in place so request_logs (RPD/RPM) are preserved
+        const res = await query(
+          `UPDATE api_keys SET key_value = $1 WHERE key_value = $2 RETURNING id, key_value, name, created_at, is_active`,
+          [keyValue, oldKey]
+        );
+        if (res.rows.length === 0) {
+          return { statusCode: 404, headers, body: JSON.stringify({ error: "Old key not found." }) };
+        }
+        return { statusCode: 200, headers, body: JSON.stringify({ message: "API Key rerolled successfully.", key: res.rows[0] }) };
+      }
+
+      // Fresh key generation
+      const name = `Key - ${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
       const res = await query(
         `INSERT INTO api_keys (key_value, name) VALUES ($1, $2) RETURNING id, key_value, name, created_at, is_active`,
         [keyValue, name]
       );
-
-      return {
-        statusCode: 201,
-        headers,
-        body: JSON.stringify({
-          message: "API Key generated successfully.",
-          key: res.rows[0]
-        })
-      };
+      return { statusCode: 201, headers, body: JSON.stringify({ message: "API Key generated successfully.", key: res.rows[0] }) };
     } 
     
     if (event.httpMethod === 'GET') {

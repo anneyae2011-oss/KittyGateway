@@ -65,13 +65,18 @@ export default function App() {
   const generateApiKey = async () => {
     setKeyLoading(true);
     try {
-      const res = await fetch('/api/keys', { method: 'POST' });
+      const body = apiKey ? JSON.stringify({ old_key: apiKey }) : undefined;
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body
+      });
       if (res.ok) {
         const data = await res.json();
         const newKey = data.key.key_value;
         setApiKey(newKey);
         localStorage.setItem('mm_api_key', newKey);
-        triggerAlert('success', 'New API Key generated successfully!');
+        triggerAlert('success', apiKey ? 'Key rerolled — usage limits carried over.' : 'New API Key generated successfully!');
       } else {
         const err = await res.json();
         triggerAlert('error', err.error || 'Failed to generate key.');
