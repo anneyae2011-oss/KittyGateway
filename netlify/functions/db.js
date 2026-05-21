@@ -43,12 +43,17 @@ export async function initDb() {
       CREATE TABLE IF NOT EXISTS providers (
         id VARCHAR(50) PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
-        api_key TEXT NOT NULL,
+        api_key TEXT,
         base_url TEXT NOT NULL,
         is_active BOOLEAN DEFAULT FALSE,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Migrate existing NOT NULL constraint on api_key if it exists
+    await client.query(`
+      ALTER TABLE providers ALTER COLUMN api_key DROP NOT NULL;
+    `).catch(() => {});  // ignore if already nullable
 
     // 3. Create settings table
     await client.query(`
@@ -73,17 +78,6 @@ export async function initDb() {
       INSERT INTO settings (key, value)
       VALUES ('context_size', '8192')
       ON CONFLICT (key) DO NOTHING;
-    `);
-
-    // Insert default providers if they don't exist
-    await client.query(`
-      INSERT INTO providers (id, name, api_key, base_url, is_active)
-      VALUES 
-        ('openai', 'OpenAI', '', 'https://api.openai.com/v1', false),
-        ('anthropic', 'Anthropic', '', 'https://api.anthropic.com/v1', false),
-        ('gemini', 'Google Gemini', '', 'https://generativetool.googleapis.com/v1beta', false),
-        ('openrouter', 'OpenRouter', '', 'https://openrouter.ai/api/v1', false)
-      ON CONFLICT (id) DO NOTHING;
     `);
 
     console.log("Database self-initialized successfully.");
