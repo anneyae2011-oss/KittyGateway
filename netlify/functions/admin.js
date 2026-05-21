@@ -75,6 +75,48 @@ export async function handler(event, context) {
         };
       }
 
+      // Action: ADD CUSTOM PROVIDER
+      if (action === 'add_provider') {
+        const { name, api_key, base_url } = requestBody;
+        if (!name || !base_url) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing name or base_url" }) };
+        }
+
+        let formattedBaseUrl = base_url.trim().replace(/\/$/, '');
+
+        // Generate a slug id from the name
+        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+        await query(
+          `INSERT INTO providers (id, name, api_key, base_url, is_active)
+           VALUES ($1, $2, $3, $4, FALSE)
+           ON CONFLICT (id) DO UPDATE SET name = $2, api_key = COALESCE($3, providers.api_key), base_url = $4`,
+          [id, name, api_key || null, formattedBaseUrl]
+        );
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ message: "Provider added successfully.", id })
+        };
+      }
+
+      // Action: DELETE PROVIDER
+      if (action === 'delete_provider') {
+        const { provider_id } = requestBody;
+        if (!provider_id) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing provider_id" }) };
+        }
+
+        await query(`DELETE FROM providers WHERE id = $1`, [provider_id]);
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ message: "Provider deleted successfully." })
+        };
+      }
+
       // Action: UPDATE PROVIDER
       if (action === 'update_provider') {
         const { provider_id, api_key, base_url, is_active } = requestBody;

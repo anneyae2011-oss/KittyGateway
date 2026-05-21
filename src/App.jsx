@@ -38,7 +38,7 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
 
   // Admin config forms
-  const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [newProviderName, setNewProviderName] = useState('');
   const [providerApiKey, setProviderApiKey] = useState('');
   const [providerBaseUrl, setProviderBaseUrl] = useState('');
   const [contextSizeInput, setContextSizeInput] = useState('8192');
@@ -176,37 +176,74 @@ export default function App() {
     }
   };
 
-  // Update Provider Config
-  const handleUpdateProvider = async (e) => {
+  // Add Custom Provider
+  const handleAddProvider = async (e) => {
     e.preventDefault();
     try {
       const res = await fetch('/api/admin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-password': adminPassword
-        },
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
         body: JSON.stringify({
-          action: 'update_provider',
-          provider_id: selectedProvider,
+          action: 'add_provider',
+          name: newProviderName,
           api_key: providerApiKey || undefined,
-          base_url: providerBaseUrl || undefined,
-          is_active: true // Auto-activate the configured provider
+          base_url: providerBaseUrl
         })
       });
-
       if (res.ok) {
-        triggerAlert('success', `Activated and configured ${selectedProvider}!`);
+        triggerAlert('success', `Provider "${newProviderName}" added!`);
+        setNewProviderName('');
         setProviderApiKey('');
         setProviderBaseUrl('');
+        await refreshAdminConfig();
+      } else {
+        const err = await res.json();
+        triggerAlert('error', err.error || 'Failed to add provider.');
+      }
+    } catch (e) {
+      triggerAlert('error', 'Network error adding provider.');
+    }
+  };
+
+  // Activate a provider
+  const handleActivateProvider = async (providerId) => {
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+        body: JSON.stringify({ action: 'update_provider', provider_id: providerId, is_active: true })
+      });
+      if (res.ok) {
+        triggerAlert('success', 'Provider activated!');
         await refreshAdminConfig();
         await fetchModels();
       } else {
         const err = await res.json();
-        triggerAlert('error', err.error || 'Failed to update provider.');
+        triggerAlert('error', err.error || 'Failed to activate provider.');
       }
     } catch (e) {
-      triggerAlert('error', 'Network error updating provider.');
+      triggerAlert('error', 'Network error activating provider.');
+    }
+  };
+
+  // Delete a provider
+  const handleDeleteProvider = async (providerId) => {
+    if (!confirm(`Delete provider "${providerId}"?`)) return;
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+        body: JSON.stringify({ action: 'delete_provider', provider_id: providerId })
+      });
+      if (res.ok) {
+        triggerAlert('success', 'Provider deleted.');
+        await refreshAdminConfig();
+      } else {
+        const err = await res.json();
+        triggerAlert('error', err.error || 'Failed to delete provider.');
+      }
+    } catch (e) {
+      triggerAlert('error', 'Network error deleting provider.');
     }
   };
 
@@ -294,16 +331,6 @@ export default function App() {
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
-
-  // Set provider details on selector change
-  useEffect(() => {
-    if (adminConfig?.providers) {
-      const provider = adminConfig.providers.find(p => p.id === selectedProvider);
-      if (provider) {
-        setProviderBaseUrl(provider.base_url);
-      }
-    }
-  }, [selectedProvider, adminConfig]);
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1.5rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -423,52 +450,85 @@ export default function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
                     <Cpu size={18} />
-                    Active Provider Setup
+                    Custom Provider Setup
                   </h3>
-                  <form onSubmit={handleUpdateProvider} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Select Provider</label>
-                      <select 
-                        className="premium-input"
-                        value={selectedProvider}
-                        onChange={(e) => setSelectedProvider(e.target.value)}
-                      >
-                        <option value="openai">OpenAI (Primary)</option>
-                        <option value="anthropic">Anthropic (Claude)</option>
-                        <option value="gemini">Google Gemini (v1beta)</option>
-                        <option value="openrouter">OpenRouter (Any Model)</option>
-                      </select>
-                    </div>
 
+                  {/* Add new provider form */}
+                  <form onSubmit={handleAddProvider} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>API Endpoint URL</label>
-                      <input 
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Provider Name</label>
+                      <input
                         type="text"
-                        placeholder="API Base URL..."
+                        placeholder="e.g. My Local LLM"
+                        className="premium-input"
+                        value={newProviderName}
+                        onChange={(e) => setNewProviderName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>API Base URL</label>
+                      <input
+                        type="text"
+                        placeholder="https://api.example.com/v1"
                         className="premium-input"
                         value={providerBaseUrl}
                         onChange={(e) => setProviderBaseUrl(e.target.value)}
                         required
                       />
                     </div>
-
                     <div>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Configure API Key</label>
-                      <input 
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>API Key</label>
+                      <input
                         type="password"
-                        placeholder="Enter Provider API Key..."
+                        placeholder="Enter API Key..."
                         className="premium-input"
                         value={providerApiKey}
                         onChange={(e) => setProviderApiKey(e.target.value)}
                       />
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Leave blank to keep existing key cached.</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Leave blank to keep existing key.</span>
                     </div>
-
-                    <button type="submit" className="premium-btn" style={{ marginTop: '0.5rem', alignSelf: 'flex-start' }}>
+                    <button type="submit" className="premium-btn" style={{ alignSelf: 'flex-start' }}>
                       <Power size={16} />
-                      Save & Activate
+                      Add Provider
                     </button>
                   </form>
+
+                  {/* Existing providers list */}
+                  {adminConfig?.providers?.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-dark)' }}>Configured Providers</h4>
+                      {adminConfig.providers.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.25)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{p.name}</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{p.base_url}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
+                              {p.is_active ? 'Active' : 'Offline'}
+                            </span>
+                            {!p.is_active && (
+                              <button
+                                onClick={() => handleActivateProvider(p.id)}
+                                className="premium-btn-secondary"
+                                style={{ padding: '0.25rem 0.6rem', borderRadius: '8px', fontSize: '0.75rem' }}
+                              >
+                                Activate
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteProvider(p.id)}
+                              className="premium-btn-secondary"
+                              style={{ padding: '0.25rem 0.5rem', borderRadius: '8px', color: '#dc3545', borderColor: 'rgba(220,53,69,0.2)' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Global Configurations Settings */}
@@ -498,21 +558,6 @@ export default function App() {
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
                       Dynamically restricts maximum tokens permitted per user chat completion sequence.
                     </p>
-                  </div>
-
-                  {/* Active Providers Overview list */}
-                  <div style={{ marginTop: '0.5rem' }}>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-dark)' }}>Active Statuses</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {adminConfig?.providers?.map(p => (
-                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.25)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.4)' }}>
-                          <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{p.name}</span>
-                          <span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
-                            {p.is_active ? 'Active Routing' : 'Offline'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
 
                 </div>

@@ -126,62 +126,28 @@ export async function handler(event, context) {
 
       // Fetch models from active provider
       try {
-        if (activeProvider.id === 'openai' || activeProvider.id === 'openrouter') {
-          const fetchRes = await fetch(`${activeProvider.base_url}/models`, {
-            headers: {
-              'Authorization': `Bearer ${activeProvider.api_key}`
-            }
-          });
-          if (fetchRes.ok) {
-            const data = await fetchRes.json();
-            return {
-              statusCode: 200,
-              headers,
-              body: JSON.stringify(data)
-            };
-          }
+        const fetchRes = await fetch(`${activeProvider.base_url}/models`, {
+          headers: { 'Authorization': `Bearer ${activeProvider.api_key}` }
+        });
+        if (fetchRes.ok) {
+          const data = await fetchRes.json();
+          return { statusCode: 200, headers, body: JSON.stringify(data) };
         }
-        
-        // Fallback or static list if fetch fails or for providers without /models
-        const fallbackModels = {
-          openai: [
-            { id: "gpt-4o", object: "model", created: 1715616000, owned_by: "openai" },
-            { id: "gpt-4o-mini", object: "model", created: 1715616000, owned_by: "openai" },
-            { id: "gpt-4-turbo", object: "model", created: 1715616000, owned_by: "openai" },
-            { id: "gpt-3.5-turbo", object: "model", created: 1715616000, owned_by: "openai" }
-          ],
-          anthropic: [
-            { id: "claude-3-5-sonnet-latest", object: "model", created: 1715616000, owned_by: "anthropic" },
-            { id: "claude-3-opus-latest", object: "model", created: 1715616000, owned_by: "anthropic" },
-            { id: "claude-3-haiku-20240307", object: "model", created: 1715616000, owned_by: "anthropic" }
-          ],
-          gemini: [
-            { id: "gemini-1.5-pro", object: "model", created: 1715616000, owned_by: "google" },
-            { id: "gemini-1.5-flash", object: "model", created: 1715616000, owned_by: "google" }
-          ],
-          openrouter: [
-            { id: "meta-llama/llama-3-8b-instruct", object: "model", created: 1715616000, owned_by: "meta" },
-            { id: "mistralai/mystral-7b-instruct", object: "model", created: 1715616000, owned_by: "mistral" }
-          ]
-        };
 
-        const list = fallbackModels[activeProvider.id] || [
-          { id: `${activeProvider.id}-default-model`, object: "model", created: Date.now(), owned_by: activeProvider.id }
-        ];
-
+        // Fallback if provider doesn't support /models
         return {
           statusCode: 200,
           headers,
-          body: JSON.stringify({ data: list })
+          body: JSON.stringify({
+            data: [{ id: `${activeProvider.id}-default`, object: "model", created: Date.now(), owned_by: activeProvider.id }]
+          })
         };
       } catch (err) {
         return {
           statusCode: 200,
           headers,
           body: JSON.stringify({
-            data: [
-              { id: "gpt-4o-mini", object: "model", created: Date.now(), owned_by: "openai" }
-            ]
+            data: [{ id: `${activeProvider.id}-default`, object: "model", created: Date.now(), owned_by: activeProvider.id }]
           })
         };
       }
@@ -291,45 +257,12 @@ export async function handler(event, context) {
         [apiKey.id, '/chat/completions']
       );
 
-      // 6. Forward request to Provider API
-      let targetUrl = `${activeProvider.base_url}/chat/completions`;
-      let forwardHeaders = {
-        'Content-Type': 'application/json'
+      // 6. Forward request to Provider API (OpenAI-compatible)
+      const targetUrl = `${activeProvider.base_url}/chat/completions`;
+      const forwardHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${activeProvider.api_key}`
       };
-
-      // Set Authentication
-      if (activeProvider.id === 'openai') {
-        forwardHeaders['Authorization'] = `Bearer ${activeProvider.api_key}`;
-      } else if (activeProvider.id === 'anthropic') {
-        targetUrl = `${activeProvider.base_url}/messages`;
-        forwardHeaders['x-api-key'] = activeProvider.api_key;
-        forwardHeaders['anthropic-version'] = '2023-06-01';
-        
-        // Anthropic message API translation if provider is Anthropic
-        // Translate payload to Anthropic format
-        const anthropicSystem = messages.find(m => m.role === 'system')?.content || '';
-        const anthropicMessages = messages.filter(m => m.role !== 'system').map(m => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: m.content
-        }));
-
-        payload = {
-          model: payload.model === 'claude-3-5-sonnet-latest' ? 'claude-3-5-sonnet-20241022' : (payload.model || 'claude-3-5-haiku-20241022'),
-          messages: anthropicMessages,
-          max_tokens: payload.max_tokens || 4096,
-          stream: payload.stream || false
-        };
-        if (anthropicSystem) {
-          payload.system = anthropicSystem;
-        }
-      } else if (activeProvider.id === 'gemini') {
-        // Translate to Gemini OpenAI compatibility base
-        forwardHeaders['Authorization'] = `Bearer ${activeProvider.api_key}`;
-      } else if (activeProvider.id === 'openrouter') {
-        forwardHeaders['Authorization'] = `Bearer ${activeProvider.api_key}`;
-        forwardHeaders['HTTP-Referer'] = 'https://maomao.ai';
-        forwardHeaders['X-Title'] = 'MaoMaoAI';
-      }
 
       // Standard non-streaming fetch
       try {
@@ -357,38 +290,7 @@ export async function handler(event, context) {
           };
         }
 
-        // Translate Anthropic response back to OpenAI format if needed
-        if (activeProvider.id === 'anthropic') {
-          const anthropicData = await fetchRes.json();
-          const openAiResponse = {
-            id: anthropicData.id,
-            object: "chat.completion",
-            created: Math.floor(Date.now() / 1000),
-            model: payload.model,
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: "assistant",
-                  content: anthropicData.content?.[0]?.text || ""
-                },
-                finish_reason: anthropicData.stop_reason === 'end_turn' ? 'stop' : (anthropicData.stop_reason || 'stop')
-              }
-            ],
-            usage: {
-              prompt_tokens: anthropicData.usage?.input_tokens || 0,
-              completion_tokens: anthropicData.usage?.output_tokens || 0,
-              total_tokens: (anthropicData.usage?.input_tokens || 0) + (anthropicData.usage?.output_tokens || 0)
-            }
-          };
-
-          return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify(openAiResponse)
-          };
-        }
-
+        // Return provider response directly
         const dataText = await fetchRes.text();
         return {
           statusCode: 200,
