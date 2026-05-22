@@ -152,7 +152,17 @@ export async function handler(event, context) {
           const errText = await fetchRes.text();
           let errJson = {};
           try { errJson = JSON.parse(errText); } catch (e) {}
-          return { statusCode: fetchRes.status, headers, body: JSON.stringify({ error: { message: errJson.error?.message || errText || "Upstream provider error.", type: "provider_error" } }) };
+          return {
+            statusCode: fetchRes.status,
+            headers,
+            body: JSON.stringify({
+              error: {
+                message: errJson.error?.message || errJson.message || errText || "Upstream provider error.",
+                type: "provider_error",
+                raw: errJson
+              }
+            })
+          };
         }
 
         return { statusCode: 200, headers, body: await fetchRes.text() };
