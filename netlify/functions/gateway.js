@@ -121,8 +121,7 @@ export async function handler(event, context) {
             const result = modData.results?.[0];
             if (result) {
               const isCsamFlagged = result.categories?.['sexual/minors'] === true;
-              const csamScore = result.category_scores?.['sexual/minors'] || 0;
-              if (isCsamFlagged || csamScore > 0.05) {
+              if (isCsamFlagged) {
                 return { statusCode: 400, headers, body: JSON.stringify({ error: { message: "Content rejected: child safety policy violation.", type: "safety_policy_violation", code: "csam_blocked" } }) };
               }
             }
